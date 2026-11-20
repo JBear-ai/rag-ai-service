@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Header
 
 # 프로그램의 메인 역활을 함
 # 1. 서버 초기화: 설정, RAG엔진, LangGraph를 최초 생성
