@@ -3,3 +3,5 @@ fastapi
 uvicorn[standard]
 pydantic
 pydantic-settings
+langchain-text-splitters
+langchain-core
