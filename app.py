@@ -47,8 +47,6 @@ def verify_token(request: Request, x_service_token: str = Header(default="")) ->
         raise HTTPException(status_code=401, detail="서비스 토큰이 올바르지 않습니다")
 
 
-app = FastAPI(title="Board RAG AI Service")
-
 @app.get("/health")
 def health():
     return {"status": "OK"}
@@ -58,7 +56,7 @@ def health():
 async def index(req: IndexRequest, request: Request):
     engine = request.app.state.engine
     try:
-        n = await run_in_threadpool(engine.index, req.board_id, req.title, req.content, reg.author, req.email)
+        n = await run_in_threadpool(engine.index, req.board_id, req.title, req.content, req.author, req.email)
     except Exception as e:
         log.exception("색인 실패")
         raise HTTPException(status_code=502, detail=f"색인 실패: {type(e).__name__}") from e
