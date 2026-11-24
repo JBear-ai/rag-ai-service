@@ -5,3 +5,6 @@ pydantic
 pydantic-settings
 langchain-text-splitters
 langchain-core
+langchain-openai
+pymongo
+langgraph
