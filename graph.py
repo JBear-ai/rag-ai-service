@@ -8,7 +8,7 @@ from typing import Annotated, TypedDict    # 상태 필드에 추가 동작 지�
 from langgraph.graph import END, START, StateGraph  # Langgraph의 상태 기반 그래프 생성
 
 from pydantic_settings import sources
-from requests_toolbelt.adapters import source
+
 
 from engine import ABSTAIN_MESSAGE, Chunk, body_of  # 검색 근거가 없을 때 사용할 메시지
 from settings import Settings
@@ -81,4 +81,46 @@ def build_graph(engine, settings: Settings):
         ]
         return {"sources": sources, "trace": ["format"]}
 
+
+    # 노드와 간선 연결
+    g = StateGraph(RagState)
+    # 노드 등록
+    g.add_node("retrieve", retrieve) # 첫 번째 인자는 노드의 이름이고, 두 번째 인자는 실제 실행할 함수
+    g.add_node("grade", grade)
+    g.add_node("rewrite", rewrite)
+    g.add_node("generate", generate)
+    g.add_node("abstain", abstain)
+    g.add_node("format", format_)
+
+    # 일반 간선 연결
+    g.add_edge(START, "retrieve")
+    g.add_edge("retrieve", "grade")
+
+    # 조건부 간선 연결
+    g.add_conditional_edges(
+        "grade",
+        route_after_grade,
+        {
+            "generate": "generate",
+            "rewrite": "rewrite",
+            "abstain": "abstain"
+        }
+    )
+    g.add_edge("rewrite", "retrieve")  # ← 루프
+    g.add_edge("generate", "format")
+    g.add_edge("abstain", "format")
+    g.add_edge("format", END)
+    return g.compile()  # 정의한 그래프를 실행 가능한 형태로 컴파일 후 반환
+
+# 그래프 실행
+def run_graph(graph, question: str, board_ids: list[int], top_k: int,) -> dict:
+    # 초기 상태를 전달받아 그래프를 실행하고, 최종 상태를 반환
+    return graph.invoke({
+        "question": question,
+        "query": question,
+        "board_ids": board_ids,
+        "top_k": top_k,
+        "attempts": 0,
+        "trace": [],
+    })
 

@@ -8,3 +8,5 @@ langchain-core
 langchain-openai
 pymongo
 langgraph
+requests_toolbelt
+requests-toolbelt
