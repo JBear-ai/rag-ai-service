@@ -1,38 +1,32 @@
-# LangGraph RAG 그래프: retrieve → grade → generate | rewrite↺ | abstain → format
-# LangGraph를 이용한 RAG 질문.답변 기능을 구현하기 전에 사용하는 임시 코드 (stub)
-# graph -> LangGraph로 교체
-
-
-import operator # 리스트를 합치는 operator.add 사용
-from typing import Annotated, TypedDict    # 상태 필드에 추가 동작 지정, 그래프의 상태 데이터 구조 정의
-from langgraph.graph import END, START, StateGraph  # Langgraph의 상태 기반 그래프 생성
-
-from pydantic_settings import sources
-
-
+"""LangGraph RAG 그래프: retrieve → grade → generate | rewrite↺ | abstain → format"""
+import operator  # 리스트를 합치는 operator.add 사용
+from typing import Annotated, TypedDict  # 상태 필드에 추가 동작 지정, 그래프의 상태 데이터 구조 정의
+from langgraph.graph import END, START, StateGraph  # LangGraph의 상태 기반 그래프 생성
 from engine import ABSTAIN_MESSAGE, Chunk, body_of  # 검색 근거가 없을 때 사용할 메시지
 from settings import Settings
 
+
 # 그래프에서 공유하는 상태
-class RagState(TypedDict, total=False): # TypeDict: 약속을 간주하는 의미
-    question: str   # 사용자가 입력한 원래 질문을 보존
-    query: str      # 검색에 사용할 문장으로, 재검색 과정에서 변경될수 있음
-    board_ids: list[int]    # Spring이 보낸 READY 허용목록
-    top_k: int      #
+# TypedDict: 딕션너리 구조에 자료형 구조를 지정
+class RagState(TypedDict, total=False):
+    question: str  # 사용자가 입력한 원래 질문을 보존
+    query: str  # 검색에 사용할 문장으로, 재검색 과정에서 변경 될 수 있음
+    board_ids: list[int]  # Spring이 보낸 READY 허용목록
+    top_k: int
     chunks: list[Chunk]
-    attempts: int   # rewrite 횟수  토큰 방지를 위한
-    answers: str
+    attempts: int  # rewrite 횟수
+    answer: str
     abstained: bool
     sources: list[dict]
     trace: Annotated[list[str], operator.add]
 
-# 그래프를 생성하는 함수: engine (StubEngine / AltasEngine)  더미엔진 / 실제 동작 , settings: 환경 설정 객체
-def build_graph(engine, settings: Settings):
 
+# 그래프를 생성하는 함수: engine (StubEngine / AltasEngine), settings: 한경 설정 객체
+def build_graph(engine, settings: Settings):  # 타입 힌트
     # 검색
     def retrieve(state: RagState) -> dict:
         ids = state.get("board_ids") or []
-        chunks = engine.search(state["query"], ids, state.get("top_k",4)) if ids else []
+        chunks = engine.search(state["query"], ids, state.get("top_k", 4)) if ids else []
         return {"chunks": chunks, "trace": ["retrieve"]}
 
     # 검색 결과 평가
@@ -44,7 +38,7 @@ def build_graph(engine, settings: Settings):
     def route_after_grade(state: RagState) -> str:
         if state["chunks"]:
             return "generate"
-        if state.get("board_ids") and state.get("attempts",0) < settings.max_rewrites:
+        if state.get("board_ids") and state.get("attempts", 0) < settings.max_rewrites:
             return "rewrite"
         return "abstain"
 
@@ -52,40 +46,38 @@ def build_graph(engine, settings: Settings):
     def rewrite(state: RagState) -> dict:
         return {
             "query": engine.rewrite(state["question"]),
-            "attempts": state.get("attempts",0) + 1,
+            "attempts": state.get("attempts", 0) + 1,
             "trace": ["rewrite"],
         }
 
     # 답변 생성
     def generate(state: RagState) -> dict:
-        return {
-            "answers": engine.generate(state["question"], state["chunks"]),
-            "abstained": False, "trace": ["generate"]
-        }
+        return {"answer": engine.generate(state["question"], state["chunks"]),
+                "abstained": False, "trace": ["generate"]}
 
     # 답변 보류
     def abstain(state: RagState) -> dict:
-        return {"answers": ABSTAIN_MESSAGE, "abstained": True, "chunks": [] , "trace": ["abstain"]}
+        return {"answer": ABSTAIN_MESSAGE, "abstained": True, "chunks": [], "trace": ["abstain"]}
 
     # 출처 정리
-    def format(state: RagState) -> dict:
-        # 같은 글의 여러 청크는 점수가 가장 높은 것 하나만 출저로 보여 줌
+    def format_(state: RagState) -> dict:
+        # 같은 글의 여러 청크는 점수가 가장 높은 것 하나만 출처로 보여 줌
         best: dict[int, Chunk] = {}
         for c in state.get("chunks", []):
             if c.board_id not in best or c.score > best[c.board_id].score:
                 best[c.board_id] = c
-        source = [
+        sources = [
             {"board_id": c.board_id, "title": c.title, "author": c.author,
              "snippet": body_of(c.text)[:120], "score": c.score}
             for c in sorted(best.values(), key=lambda c: c.score, reverse=True)
         ]
         return {"sources": sources, "trace": ["format"]}
 
-
     # 노드와 간선 연결
     g = StateGraph(RagState)
+
     # 노드 등록
-    g.add_node("retrieve", retrieve) # 첫 번째 인자는 노드의 이름이고, 두 번째 인자는 실제 실행할 함수
+    g.add_node("retrieve", retrieve)  # 첫 번째 인자는 노드의 이름이고, 두 번째 인자는 실제 실행할 함수
     g.add_node("grade", grade)
     g.add_node("rewrite", rewrite)
     g.add_node("generate", generate)
@@ -113,8 +105,8 @@ def build_graph(engine, settings: Settings):
     return g.compile()  # 정의한 그래프를 실행 가능한 형태로 컴파일 후 반환
 
 # 그래프 실행
-def run_graph(graph, question: str, board_ids: list[int], top_k: int,) -> dict:
-    # 초기 상태를 전달받아 그래프를 실행하고, 최종 상태를 반환
+def run_graph(graph, question: str, board_ids: list[int], top_k: int) -> dict:
+    # 초시 상태를 전달받아 그래프를 실행하고, 최종 상태를 반환
     return graph.invoke({
         "question": question,
         "query": question,
@@ -123,4 +115,3 @@ def run_graph(graph, question: str, board_ids: list[int], top_k: int,) -> dict:
         "attempts": 0,
         "trace": [],
     })
-
